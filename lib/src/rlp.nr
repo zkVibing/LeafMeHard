@@ -1,5 +1,5 @@
 /// RLP decoding library
-use dep::std::wrapping_sub;
+use std::ops::WrappingSub;
 
 /// Max number of bytes required to represent length of a string or list
 // TODO: Incorporate as comptime Field function parameter whenever this is possible
@@ -10,14 +10,14 @@ global STRING: u64 = 0;
 global LIST: u64 = 1;
 
 /// RLP header struct obtained from length decoding
-struct RLP_Header
+pub struct RLP_Header
 {
     /// Offset of RLP payload
-    offset: u64,
+    pub offset: u64,
     /// Length of RLP-encoded object starting from the above offset
-    length: u64,
+    pub length: u64,
     /// Data type of RLP-encoded object, i.e. STRING or LIST
-    data_type: u64 
+    pub data_type: u64
 }
 
 impl RLP_Header
@@ -31,19 +31,19 @@ impl RLP_Header
 
 /// RLP list in the form of a look-up table containing the offsets, lengths
 /// and types of the fields together with the total number of fields.
-struct RLP_List<NUM_FIELDS>
+pub struct RLP_List<let NUM_FIELDS: u32>
 {
     /// Offsets of the fields
-    offset: [u64; NUM_FIELDS],
+    pub offset: [u64; NUM_FIELDS],
     /// Byte lengths of the fields
-    length: [u64; NUM_FIELDS],
+    pub length: [u64; NUM_FIELDS],
     /// Data types of fields, i.e. STRING or LIST
-    data_type: [u64; NUM_FIELDS],
+    pub data_type: [u64; NUM_FIELDS],
     /// Number of fields
-    num_fields: u64
+    pub num_fields: u64
 }
 
-impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
+impl<let NUM_FIELDS: u32> RLP_List<NUM_FIELDS>
 {
     /// RLP table constructor taking offsets, lengths, data types and number of
     /// fields as arguments
@@ -59,7 +59,7 @@ impl<NUM_FIELDS> RLP_List<NUM_FIELDS>
 /// # Arguments
 /// * `arr` - RLP-encoded list
 /// * `lenlen` - Number of bytes containing the length of the payload
-pub fn data_len<N>(arr: [u8; N], lenlen: u64) -> u64 {
+pub fn data_len<let N: u32>(arr: [u8; N], lenlen: u64) -> u64 {
     assert(lenlen <= MAX_LEN_IN_BYTES); // Byte length of length of payload must not exceed MAX_LEN_IN_BYTES
     let mut out = 0;
 
@@ -69,7 +69,7 @@ pub fn data_len<N>(arr: [u8; N], lenlen: u64) -> u64 {
 
     for i in 0..loop_len {
         let len_len_ind = (((i as u32) < (lenlen as u32)) as u64);
-        out = len_len_ind*(256*out + (arr[i + 1] as u64)) + (1-len_len_ind)*out;
+        out = len_len_ind*(256*out + (arr[(i + 1) as u32] as u64)) + (1-len_len_ind)*out;
     }
 
     out
@@ -79,7 +79,7 @@ pub fn data_len<N>(arr: [u8; N], lenlen: u64) -> u64 {
 ///
 /// # Arguments
 /// * `arr` - RLP-encoded byte array
-pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
+pub fn decode_len<let N: u32>(arr: [u8; N]) -> RLP_Header {
     let prefix = arr[0];
 
     // Prefix range indicators
@@ -98,15 +98,15 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
             1,
             strict_if(
                 prefix_ind3,
-                wrapping_sub(1 + prefix, 0xb7) as Field,
-                strict_if(prefix_ind4, 1, wrapping_sub(1 + prefix, 0xf7) as Field)
+                (1 + prefix).wrapping_sub(0xb7) as Field,
+                strict_if(prefix_ind4, 1, (1 + prefix).wrapping_sub(0xf7) as Field)
             )
         )
     ) as u64;
 
     // To compute length, first determine how many of the following bytes contain the length of the payload.
-    let lenlen = prefix_ind3 as u64 * (1 - prefix_ind2 as u64) * wrapping_sub(prefix, 0xb7) as u64
-        + (1 - prefix_ind4 as u64) * wrapping_sub(prefix, 0xf7) as u64;
+    let lenlen = prefix_ind3 as u64 * (1 - prefix_ind2 as u64) * prefix.wrapping_sub(0xb7) as u64
+        + (1 - prefix_ind4 as u64) * prefix.wrapping_sub(0xf7) as u64;
 
     // Set length according to whether it is contained in the prefix (i.e. lenlen == 0).
     let len = strict_if(
@@ -116,8 +116,8 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
             1,
             strict_if(
                 prefix_ind2,
-                wrapping_sub(prefix, 0x80) as Field,
-                wrapping_sub(prefix, 0xc0) as Field
+                prefix.wrapping_sub(0x80) as Field,
+                prefix.wrapping_sub(0xc0) as Field
             )
         ),
         data_len(arr, lenlen) as Field
@@ -133,7 +133,7 @@ pub fn decode_len<N>(arr: [u8; N]) -> RLP_Header {
 ///
 /// # Arguments
 /// * `input` - RLP-encoded string
-pub fn decode0<N>(input: [u8; N]) -> (u64, u64) {
+pub fn decode0<let N: u32>(input: [u8; N]) -> (u64, u64) {
     let mut RLP_Header {offset, length, data_type} = decode_len(input); // Read RLP header of input
 
     let total_len = length + offset; // Data length including RLP header
@@ -153,7 +153,7 @@ pub fn decode0<N>(input: [u8; N]) -> (u64, u64) {
 /// # Quirks
 /// * For string elements, the offset points to the payload, whereas the offset
 ///   of a list element points to the RLP header of that element.
-pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
+pub fn decode1<let N: u32, let NUM_FIELDS: u32>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
     let mut num_fields: u64 = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
@@ -172,7 +172,7 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
         let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
         // Make sure the index doesn't overshoot
-        let header: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop(input, offset); // Read element header
+        let header: [u8; 3] = take_dot_drop(input, offset); // Read element header (MAX_LEN_IN_BYTES + 1 = 3)
         let RLP_Header {offset: field_off, length: field_len, data_type: field_type} = decode_len(header); // Decode length of element
         let total_field_len = field_off + field_len; // Length of element + header
 
@@ -196,7 +196,7 @@ pub fn decode1<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
 ///
 /// # Arguments
 /// * `input` - RLP-encoded list
-pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
+pub fn decode1_small_lis<let N: u32, let NUM_FIELDS: u32>(input: [u8; N]) -> RLP_List<NUM_FIELDS> {
     let mut num_fields: u64 = 0; // Number of fields
     let mut dec_off = [0; NUM_FIELDS]; // Decoded offsets
     let mut dec_len = [0; NUM_FIELDS]; // Decoded lengths
@@ -212,7 +212,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
     for i in 0..NUM_FIELDS {
         let loop_ind = (offset != total_len) as u64; // Loop indicator: Take action only if there is data left to parse.
 
-        let header = input[offset]; // Read field header
+        let header = input[offset as u32]; // Read field header
 
         assert(header < 0xb8); // Header must represent a string of length < 56 bytes.
 
@@ -223,7 +223,7 @@ pub fn decode1_small_lis<N, NUM_FIELDS>(input: [u8; N]) -> RLP_List<NUM_FIELDS> 
         let field_off = 1 - single_byte_ind; // If `header` < 0x80, then we are dealing with a single byte whose value
         // is given by header. Else, the string begins at the following index.
 
-        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (wrapping_sub(header, 0x80) as u64); // Single byte means len = 1,
+        let field_len = single_byte_ind * 1 + (1 - single_byte_ind) * (header.wrapping_sub(0x80) as u64); // Single byte means len = 1,
         // else subtract 0x80 from the header to determine len.
 
         let total_field_len = field_off + field_len; // Length of field + header
@@ -299,7 +299,7 @@ fn data_len_test_padded() {
 #[test]
 fn rlp_length_check() {
     // List test case
-    let in0: [u8; MAX_LEN_IN_BYTES + 1] = take_dot_drop([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
+    let in0: [u8; 3] = take_dot_drop([0xc7, 0xc0, 0xc1, 0xc0, 0xc3, 0xc0, 0xc1, 0xc0], 0);
     let x = decode_len(in0);
     assert(x.offset == 1);
     assert(x.length == 7);
@@ -323,13 +323,13 @@ fn rlp_length_check() {
 }
 
 // Function for selecting M elements of an array starting at index n
-pub fn take_dot_drop<T, N, M>(arr: [T; N], n: u64) -> [T; M] // = drop n . take M
+pub fn take_dot_drop<T, let N: u32, let M: u32>(arr: [T; N], n: u64) -> [T; M] // = drop n . take M
 {
-    let mut out = [dep::std::unsafe::zeroed(); M];
+    let mut out = [dep::std::mem::zeroed(); M];
 
     for i in 0..M {
-        let j = (((i + n) as u64) < N) as u64 * (i + n); // Restrict to proper range and fill with arr[0] otherwise.
-        out[i] = arr[j];
+        let j = (((i as u32 + n as u32) < N) as u32) * (i as u32 + n as u32); // Restrict to proper range and fill with arr[0] otherwise.
+        out[i] = arr[j as u32];
     }
 
     out

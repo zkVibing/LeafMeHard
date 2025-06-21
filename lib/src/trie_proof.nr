@@ -4,7 +4,7 @@
 // - bound the sizes of the nodes embedded in `proof` to allow arbitrary fixed-length keys
 // - bound the key length to allow variable-length keys
 // These would require the ability to declare arrays of length expressed as a comptime u64 variable.
-struct TrieProof<KEY_LEN, PROOF_LEN, MAX_VALUE_LEN>
+pub struct TrieProof<let KEY_LEN: u32, let PROOF_LEN: u32, let MAX_VALUE_LEN: u32>
 {
     /// Unhashed key to look up along proof path
     key: [u8; KEY_LEN],

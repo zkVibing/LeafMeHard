@@ -1,13 +1,13 @@
-mod rlp; // Module for required RLP encoding/decoding
+pub mod rlp; // Module for required RLP encoding/decoding
 
-mod const;
+pub mod const;
 mod utils;
 mod utils_test;
-mod node;
+pub mod node;
 mod node_test;
 
-mod trie_proof;
-mod state_proof;
+pub mod trie_proof;
+pub mod state_proof;
 mod state_proof_test;
-mod storage_proof;
+pub mod storage_proof;
 mod storage_proof_test;

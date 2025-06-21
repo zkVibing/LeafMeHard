@@ -2,13 +2,13 @@ use ethers::prelude::*;
 use ethers::utils::rlp;
 
 /// Maximum length of a state or storage trie node in bytes
-const MAX_TRIE_NODE_LENGTH: usize = 532;
+pub const MAX_TRIE_NODE_LENGTH: usize = 532;
 
 /// Maximum size of the value in a storage slot
-const MAX_STORAGE_VALUE_LENGTH: usize = 32;
+pub const MAX_STORAGE_VALUE_LENGTH: usize = 32;
 
 /// Maximum size of the RLP-encoded list representing an account state
-const MAX_ACCOUNT_STATE_LENGTH: usize = 134;
+pub const MAX_ACCOUNT_STATE_LENGTH: usize = 134;
 
 /// Trie proof struct mirroring the equivalent Noir code
 pub struct TrieProof
