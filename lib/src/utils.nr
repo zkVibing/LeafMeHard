@@ -30,17 +30,7 @@ pub(crate) fn assert_subarray<let N: u32, let M: u32>(subarray: [u8; N], array: 
     }
 }
 
-/// Byte-to-nibble converter. Returns a pair of two nibbles.
-///
-/// # Arguments
-/// * `b` - Byte
-pub(crate) fn byte_to_nibbles(b: u8) -> (u8, u8)
-{
-    let upper = b >> 4;
-    let lower = b - 16*upper;
 
-    (upper, lower)
-}
 
 /// Function for expressing a big-endian byte array as a right-padded one.
 /// Returns a right-padded byte array together with the actual byte length of the number.

@@ -1,5 +1,5 @@
 [package]
-name = "depth_8_storage_proof"
+name = "blake2b_test"
 type = "bin"
 authors = [""]
 compiler_version = ">=0.24.0"

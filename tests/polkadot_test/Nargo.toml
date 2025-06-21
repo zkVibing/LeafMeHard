@@ -1,5 +1,5 @@
 [package]
-name = "depth_8_state_proof"
+name = "polkadot_test"
 type = "bin"
 authors = [""]
 compiler_version = ">=0.24.0"
