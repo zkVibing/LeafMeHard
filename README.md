@@ -1,4 +1,4 @@
-# noir-trie-proofs
+# Leaf Me Hard
 
 ## Description
 
