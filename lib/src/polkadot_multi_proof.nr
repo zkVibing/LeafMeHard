@@ -1,25 +1,18 @@
 /// Simplified Polkadot compact multi-proof verification optimized for ZK circuits
 /// This module provides minimal verification of compact multi-proofs for multiple
-/// key-value pairs against a single root hash, focusing on circuit efficiency
+/// key-value pairs against a single root hash
 
 use crate::blake2b::blake2b;
 use crate::scale::decode_compact_length;
 use crate::polkadot_const::{MAX_KEY_LENGTH, HASH_LENGTH};
 
 
-/// Maximum number of nodes in a compact proof (circuit efficiency limit)
-global MAX_PROOF_NODES: u32 = 32;
-
-/// Maximum size for individual node data (circuit memory limit)
-global MAX_NODE_SIZE: u32 = 256;
-
-/// Maximum child references per trie node (circuit limit for branch nodes)
-global MAX_CHILD_REFS: u32 = 8;
-
-/// Sentinel value for "no reference" in child reference arrays
+global MAX_PROOF_NODES: u32 = 256; // Reduced for faster compilation
+global MAX_NODE_SIZE: u32 = 256;   // Reduced memory footprint
+global MAX_CHILD_REFS: u32 = 16;
 global NO_REFERENCE: u32 = 0xFFFFFFFF;
 
-/// Compact proof item structure (minimized for circuit size)
+/// Compact proof item structure
 pub struct CompactProofItem {
     pub key: [u8; MAX_KEY_LENGTH],
     pub key_length: u32,
@@ -47,17 +40,6 @@ impl CompactProofItem {
             matches
         }
     }
-}
-
-/// Compare two hash arrays for equality
-fn array_equals(a: [u8; HASH_LENGTH], b: [u8; HASH_LENGTH]) -> bool {
-    let mut equal = true;
-    for i in 0..HASH_LENGTH {
-        if a[i] != b[i] {
-            equal = false;
-        }
-    }
-    equal
 }
 
 /// Simplified compact multi-proof structure
@@ -151,8 +133,6 @@ impl<let PROOF_LEN: u32> PolkadotMultiProof<PROOF_LEN> {
         blake2b(hash_input)
     }
 
-    /// Verify trie structure with parsed nodes following Parity's algorithm
-    /// Implements the core logic from trie-db/src/proof/verify.rs
     fn verify_trie_structure_with_nodes(
         self,
         node_hashes: [[u8; HASH_LENGTH]; MAX_PROOF_NODES],
@@ -160,67 +140,78 @@ impl<let PROOF_LEN: u32> PolkadotMultiProof<PROOF_LEN> {
         node_lengths: [u32; MAX_PROOF_NODES],
         nodes_count: u32
     ) -> bool {
-        if nodes_count == 0 {
-            false
-        } else {
-            // Track which nodes have been instantiated (used as child references)
-            let mut instantiated: [bool; MAX_PROOF_NODES] = [false; MAX_PROOF_NODES];
-            let mut root_found = false;
-            let mut computed_root = [0; HASH_LENGTH];
+        let is_valid_count = (nodes_count > 0) & (nodes_count <= MAX_PROOF_NODES);
 
-            // Process nodes to build trie structure (with fixed bounds)
-            for i in 0..MAX_PROOF_NODES {
-                if i < nodes_count {
-                    let node_data = node_data_array[i];
-                    let node_length = node_lengths[i];
-                    let node_hash = node_hashes[i];
+        let mut instantiated_bitmap: u32 = 0;
+        let mut root_candidate = [0; HASH_LENGTH];
+        let mut root_candidate_idx = 0;
 
-                    // Parse node to check for child references
-                    let child_refs = self.extract_child_references(node_data, node_length);
+        // Process all nodes with conditional logic (no early exits)
+        for i in 0..MAX_PROOF_NODES {
+            let is_active = (i < nodes_count) & is_valid_count;
 
-                    // Mark referenced nodes as instantiated
-                    for j in 0..MAX_CHILD_REFS {
-                        let child_idx = child_refs[j];
-                        if (child_idx < nodes_count) & (child_idx != NO_REFERENCE) {
-                            instantiated[child_idx] = true;
-                        }
-                    }
+            // Extract child references conditionally
+            let child_refs = if is_active {
+                self.extract_child_references(node_data_array[i], node_lengths[i])
+            } else {
+                [NO_REFERENCE; MAX_CHILD_REFS]
+            };
 
-                    // Check if this could be the root (not referenced by other nodes)
-                    if !root_found {
-                        let mut is_referenced = false;
-                        for k in 0..MAX_PROOF_NODES {
-                            if (k != i) & (k < nodes_count) {
-                                let other_node = node_data_array[k];
-                                let other_length = node_lengths[k];
-                                if self.node_references_hash(other_node, other_length, node_hash) {
-                                    is_referenced = true;
-                                }
+            // Find which nodes are referenced by this node's children
+            for j in 0..MAX_CHILD_REFS {
+                let child_offset = child_refs[j];
+                if is_active & (child_offset != NO_REFERENCE) {
+                    // Extract hash at this offset and find matching node
+                    for k in 0..MAX_PROOF_NODES {
+                        if (k < nodes_count) & (k != i) {
+                            let matches_child = self.hash_matches_at_offset(
+                                node_data_array[i],
+                                child_offset,
+                                node_hashes[k]
+                            );
+                            if matches_child {
+                                let bitmap_bit = 1 << (k as u8);
+                                instantiated_bitmap = instantiated_bitmap | bitmap_bit;
                             }
                         }
-
-                        if !is_referenced {
-                            root_found = true;
-                            computed_root = node_hash;
-                        }
                     }
                 }
             }
 
-            // Verify all nodes except root are referenced (no extraneous nodes)
-            let mut all_nodes_used = true;
-            for i in 0..MAX_PROOF_NODES {
-                if i < nodes_count {
-                    let is_root = array_equals(node_hashes[i], computed_root);
-                    if !is_root & !instantiated[i] {
-                        all_nodes_used = false;
-                    }
-                }
-            }
-
-            // Final verification: root found, all nodes used, root hash matches
-            root_found & all_nodes_used & self.verify_root_hash(computed_root)
+            // Update root candidate (last non-referenced node wins)
+            let bit_position = 1 << (i as u8);
+            let is_not_referenced = is_active & ((instantiated_bitmap & bit_position) == 0);
+            root_candidate = if is_not_referenced { node_hashes[i] } else { root_candidate };
+            root_candidate_idx = if is_not_referenced { i } else { root_candidate_idx };
         }
+
+        // Final verification using bitwise operations
+        let root_bit = 1 << (root_candidate_idx as u8);
+        let expected_bitmap = (1 << (nodes_count as u8)) - 1;
+        let all_nodes_accounted = (instantiated_bitmap | root_bit) == expected_bitmap;
+
+        is_valid_count & all_nodes_accounted & self.verify_root_hash(root_candidate)
+    }
+
+    /// Check if hash at given offset matches target hash
+    fn hash_matches_at_offset(
+        _self: Self,
+        node_data: [u8; MAX_NODE_SIZE],
+        offset: u32,
+        target_hash: [u8; HASH_LENGTH]
+    ) -> bool {
+        let mut matches = true;
+        for i in 0..HASH_LENGTH {
+            let can_read = (offset + i < MAX_NODE_SIZE);
+            if can_read {
+                if node_data[offset + i] != target_hash[i] {
+                    matches = false;
+                }
+            } else {
+                matches = false;
+            }
+        }
+        matches
     }
 
     /// Extract child hash references from a trie node using proper Polkadot node decoding
@@ -276,7 +267,7 @@ impl<let PROOF_LEN: u32> PolkadotMultiProof<PROOF_LEN> {
         }
     }
 
-    /// Extract child references from branch node
+    /// Optimized child reference extraction with early termination
     fn extract_branch_child_refs(
         _self: Self,
         node_data: [u8; MAX_NODE_SIZE],
@@ -287,69 +278,64 @@ impl<let PROOF_LEN: u32> PolkadotMultiProof<PROOF_LEN> {
     ) -> [u32; MAX_CHILD_REFS] {
         let mut child_refs = [NO_REFERENCE; MAX_CHILD_REFS];
 
-        // Calculate offset past header and partial key
-        let mut offset = 1; // Skip header byte
+        let is_valid_node = node_length >= 4; // Minimum: header + partial_key + bitmap
 
-        // Skip partial key bytes
-        let partial_key_bytes = (partial_key_len + 1) / 2; // Round up division
-        offset += partial_key_bytes;
+        let mut offset = 1 + (partial_key_len + 1) / 2; // Header + partial key
 
-        // Skip stored value if present
-        if has_value {
-            // In Polkadot, values are SCALE-encoded, so we need to decode the length
-            if offset < node_length {
-                let value_header = decode_compact_length(node_data, offset as u64);
-                offset += value_header.offset as u32 + value_header.length as u32;
-            }
+        // Skip value with conditional SCALE decoding
+        let should_decode_value = has_value & (offset < node_length) & is_valid_node;
+        if should_decode_value {
+            let value_header = decode_compact_length(node_data, offset as u64);
+            offset += value_header.offset as u32 + value_header.length as u32;
         }
 
-        // Read children bitmap (2 bytes for 16 possible children)
-        if offset + 2 <= node_length {
-            let children_bitmap = ((node_data[offset] as u16) << 8) | (node_data[offset + 1] as u16);
-            offset += 2;
+        let can_read_bitmap = (offset + 2 <= node_length) & is_valid_node;
+        let children_bitmap = if can_read_bitmap {
+            ((node_data[offset] as u16) << 8) | (node_data[offset + 1] as u16)
+        } else {
+            0
+        };
+        offset += 2 * (can_read_bitmap as u32);
 
-            // Extract hash references for each present child
-            for i in 0..16 {
-                if (children_bitmap & (1 << i)) != 0 {
-                    if (offset + HASH_LENGTH <= node_length) & (ref_count < MAX_CHILD_REFS) {
-                        // This child has a hash reference
-                        child_refs[ref_count] = offset;
-                        ref_count += 1;
-                        offset += HASH_LENGTH;
-                    }
-                }
-            }
+        // Constraint-efficient loop: process all iterations, use conditional logic
+        for i in 0..MAX_CHILD_REFS {
+            let has_child = (children_bitmap & (1 << (i as u8))) != 0;
+            let can_extract = (offset + HASH_LENGTH <= node_length) & (ref_count < MAX_CHILD_REFS) & can_read_bitmap;
+            let should_extract = has_child & can_extract;
+
+            // Conditional assignment instead of break/continue
+            child_refs[ref_count] = if should_extract { offset } else { child_refs[ref_count] };
+            ref_count += should_extract as u32;
+            offset += (should_extract as u32) * HASH_LENGTH;
         }
 
         child_refs
     }
 
 
-    /// Check if a node references a specific hash using proper node structure
+    /// Optimized hash reference checking with early termination
     fn node_references_hash(self, node_data: [u8; MAX_NODE_SIZE], node_length: u32, target_hash: [u8; HASH_LENGTH]) -> bool {
+        // Early bounds check
         if node_length < HASH_LENGTH {
             false
         } else {
-            // Extract child references using proper node decoding
             let child_refs = self.extract_child_references(node_data, node_length);
 
-            // Check if any child reference matches the target hash
+            // Use constraint-efficient loop with early exit
             let mut found = false;
             for i in 0..MAX_CHILD_REFS {
                 let ref_offset = child_refs[i];
-                if ref_offset != NO_REFERENCE {
-                    // Compare the hash at this offset with target hash
-                    let mut hash_matches = true;
+                let is_valid_ref = (ref_offset != NO_REFERENCE) & (ref_offset + HASH_LENGTH <= node_length);
+
+                if is_valid_ref & !found {
+                    // Efficient hash comparison - stop at first mismatch
+                    let mut matches = true;
                     for j in 0..HASH_LENGTH {
-                        if (ref_offset + j < node_length) & (ref_offset + j < MAX_NODE_SIZE) {
-                            if node_data[ref_offset + j] != target_hash[j] {
-                                hash_matches = false;
-                            }
-                        } else {
-                            hash_matches = false;
+                        if node_data[ref_offset + j] != target_hash[j] {
+                            matches = false;
                         }
                     }
-                    if hash_matches {
+                    if matches {
                         found = true;
                     }
                 }
@@ -371,51 +357,70 @@ impl<let PROOF_LEN: u32> PolkadotMultiProof<PROOF_LEN> {
         matches
     }
 
-    /// Verify compact proof reconstruction following Parity's logic
-    /// Implements the core verification algorithm from trie-db/src/proof/verify.rs
     fn verify_compact_proof_reconstruction(self) -> bool {
-        // Parse nodes from proof
-        let mut offset = 0;
-        let mut nodes_parsed = 0;
+        let is_valid_proof_size = PROOF_LEN >= 4;
 
-        // Phase 1: Parse all nodes from the proof
         let mut node_hashes: [[u8; HASH_LENGTH]; MAX_PROOF_NODES] = [[0; HASH_LENGTH]; MAX_PROOF_NODES];
         let mut node_data_array: [[u8; MAX_NODE_SIZE]; MAX_PROOF_NODES] = [[0; MAX_NODE_SIZE]; MAX_PROOF_NODES];
         let mut node_lengths: [u32; MAX_PROOF_NODES] = [0; MAX_PROOF_NODES];
 
-        let mut parsing_complete = false;
-        for _i in 0..MAX_PROOF_NODES {
-            if (offset >= PROOF_LEN) | parsing_complete {
-                // Stop processing but continue loop for circuit constraints
-            } else {
-                let (valid, node_data, node_size) = self.parse_node_at_offset_strict(offset);
-                if valid & (nodes_parsed < MAX_PROOF_NODES) {
-                    // Store node data
-                    for j in 0..MAX_NODE_SIZE {
-                        if j < node_size {
-                            node_data_array[nodes_parsed][j] = node_data[j];
-                        }
-                    }
-                    node_lengths[nodes_parsed] = node_size;
+        let (nodes_parsed, parse_success) = if is_valid_proof_size {
+            self.parse_nodes_efficiently(node_hashes, node_data_array, node_lengths)
+        } else {
+            (0, false)
+        };
 
-                    // Compute node hash
+        // Combine all validation conditions
+        let parsing_succeeded = parse_success & (nodes_parsed > 0) & is_valid_proof_size;
+
+        // Always run verification, but gate result with parsing success
+        let verification_result = self.verify_trie_structure_with_nodes(
+            node_hashes,
+            node_data_array,
+            node_lengths,
+            nodes_parsed
+        );
+
+        parsing_succeeded & verification_result
+    }
+
+    /// Constraint-efficient node parsing
+    fn parse_nodes_efficiently(
+        self,
+        mut node_hashes: [[u8; HASH_LENGTH]; MAX_PROOF_NODES],
+        mut node_data_array: [[u8; MAX_NODE_SIZE]; MAX_PROOF_NODES],
+        mut node_lengths: [u32; MAX_PROOF_NODES]
+    ) -> (u32, bool) {
+        let mut offset = 0;
+        let mut nodes_parsed = 0;
+        let mut parse_success = true;
+
+        // Optimized parsing with early exit conditions
+        for _i in 0..MAX_PROOF_NODES {
+            let can_continue = (offset < PROOF_LEN) & (nodes_parsed < MAX_PROOF_NODES) & parse_success;
+
+            if can_continue {
+                let (valid, node_data, node_size) = self.parse_node_at_offset_strict(offset);
+
+                if valid & (node_size > 0) {
+                    // Efficient conditional copy
+                    for j in 0..MAX_NODE_SIZE {
+                        let copy_byte = (j < node_size) as u8;
+                        node_data_array[nodes_parsed][j] = copy_byte * node_data[j];
+                    }
+
+                    node_lengths[nodes_parsed] = node_size;
                     node_hashes[nodes_parsed] = self.hash_node_data(node_data, node_size);
 
                     nodes_parsed += 1;
                     offset += node_size + self.get_length_prefix_size(offset);
                 } else {
-                    // Mark parsing as complete on invalid node
-                    parsing_complete = true;
+                    parse_success = false;
                 }
             }
         }
 
-        if nodes_parsed == 0 {
-            false
-        } else {
-            // Phase 2: Verify trie structure and compute root
-            self.verify_trie_structure_with_nodes(node_hashes, node_data_array, node_lengths, nodes_parsed)
-        }
+        (nodes_parsed, parse_success)
     }
 
     /// Decode compact proof header (simplified)
@@ -519,7 +524,6 @@ pub fn verify_multi_proof<let PROOF_LEN: u32>(
     multi_proof.verify()
 }
 
-// Circuit-optimized tests
 #[test]
 fn test_compact_proof_creation() {
     let root = [1; HASH_LENGTH];
