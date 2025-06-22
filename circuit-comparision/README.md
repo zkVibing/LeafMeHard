@@ -1,6 +1,6 @@
 Implementation of proof of merkle proof of inclusion implmented in Noir, Leo and Plonky3 for comparision.
 
-## Noir 
+## Noir
 
 ```
 [circuit-comparision]$ cd noir_merkle_inclusion/
@@ -10,7 +10,7 @@ Implementation of proof of merkle proof of inclusion implmented in Noir, Leo and
 ## ALeo
 ```
 [circuit-comparision]$ cd leo_merkle/
-[leo_merkle]$ time leo execute merkle_inclusion_verifier.aleo/verify_inclusion --print --file test_input_16.txt 
+[leo_merkle]$ time leo execute merkle_inclusion_verifier.aleo/verify_inclusion --print --file test_input_16.txt
 ```
 
 ## Plonky 3
@@ -24,7 +24,7 @@ Implementation of proof of merkle proof of inclusion implmented in Noir, Leo and
 
 |         | Proof Time | Proof Size (Bytes) |
 |---------+------------+--------------------|
-| Noir    |     0.143s |                    |
+| Noir    |     0.143s |              14080 |
 | Aleo    |     19.663 |                375 |
 | Plonky3 |      0.063 |             215900 |
 |         |            |                    |
