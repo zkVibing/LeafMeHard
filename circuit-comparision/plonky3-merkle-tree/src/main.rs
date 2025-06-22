@@ -44,16 +44,10 @@ use p3_poseidon2::{
     InternalLayerConstructor,
 };
 
-
 const SECURE_WIDTH: usize = 8; //this should be half of posiden width so we could compute
                                // the hash of concatination of two hashes.
-const TREE_HEIGHT: usize = 16;
 
-enum NodeType {
-    Root = 0,
-    Middle = 1,
-    Leave = 2
-};
+const TREE_HEIGHT: usize = 16;
 
 pub struct PoseidonMerkleTreeAir<
     F: Field + InjectiveMonomial<POSEIDON_SBOX_DEGREE>,
@@ -85,7 +79,8 @@ pub struct PoseidonMerkleTreeAir<
     pub poseidon_constants:
         RoundConstants<F, POSEIDON_WIDTH, POSEIDON_HALF_FULL_ROUNDS, POSEIDON_PARTIAL_ROUNDS>,
     pub tree: Vec<[F; SECURE_WIDTH]>,
-    pub queried_leaves: Vec<usize>,
+    pub proof: Vec<[F; SECURE_WIDTH]>,
+    pub leaf_index: usize,
     pub poseidon2_hasher: Poseidon2<
         F,
         Poseidon2ExternalLayerConstructor,
@@ -121,7 +116,7 @@ impl<
         POSEIDON_VECTOR_LEN,
     >
 {
-    pub fn new(leaves: Vec<[F; SECURE_WIDTH]>, queried_leaves: [usize]) -> Self
+    pub fn new(leaves: Vec<[F; SECURE_WIDTH]>, leaf_index: usize) -> Self
     where
         StandardUniform: Distribution<F> + Distribution<[F; POSEIDON_WIDTH]>,
     {
@@ -157,7 +152,8 @@ impl<
 
             tree: Self::generate_merkle_tree(poseidon2_hasher.clone(), leaves),
             poseidon2_hasher: poseidon2_hasher,
-            queried_leaves: queried_leaves,
+            leaf_index: leaf_index,
+            proof: vec![], //TODO: compute the correct proof.
         }
     }
 
@@ -324,40 +320,35 @@ impl<
     {
         //We put all rows with all their columns in a flat vector and then we'll
         //tell plonky to turn it into a nice a table with number of columns
-        //we have a selector column which indicate if we are a leaf, middle node
-        //or root.
-        //a second selector indicates if we are left child or a right child.        
-        let number_of_queried_leaves = self.queried_leaves.length();
-        let mut values = Vec::with_capacity(number_of_queried_leaves * TREE_HEIGHT * POSEIDON_VECTOR_LEN);
+        //There are two columns in our air table and the number of steps is the
+        //depth of the tree.
+        let mut values = Vec::with_capacity(TREE_HEIGHT * POSEIDON_VECTOR_LEN);
 
-        for i in 0..number_of_queried_leaves {
+        //we can just fill up the columns from the tree
+        let mut current_node = Self::leaf_index_to_tree_index(self.leaf_index);
 
-            //we can just fill up the columns from the tree
-            let mut current_node = Self::leaf_index_to_tree_index(self.queried_leaves[i]);
+        //not clear what are these for
+        let extra_capacity_bits = 0;
+        let mut poseidon_matrix_width = 0;
 
-            //not clear what are these for
-            let extra_capacity_bits = 0;
-            let mut poseidon_matrix_width = 0;
+        for _ in 0..TREE_HEIGHT {
+            //We need to know if we are the right node or
+            //the left node to hash in correct order.
+            let sibling_node = match current_node {
+                0 => [<F as PrimeCharacteristicRing>::ZERO; SECURE_WIDTH],
+                _ => self.tree[Self::sibling_index(current_node)],
+            };
 
-            values.push(NodeType::Leave);
-            for _ in 0..TREE_HEIGHT {
-                //We need to know if we are the right node or
-                //the left node to hash in correct order.
-                let sibling_node = match current_node {
-                    0 => [<F as PrimeCharacteristicRing>::ZERO; SECURE_WIDTH],
-                    _ => self.tree[Self::sibling_index(current_node)],
-                };
-
-                let (rightessness, siblings_concatinated) = match Self::is_right_sibling(current_node) {
-                    0 => (
-                        <F as PrimeCharacteristicRing>::ZERO,
-                        [self.tree[current_node], sibling_node].concat(),
-                    ),
-                    _ => (
-                        <F as PrimeCharacteristicRing>::ONE,
-                        [sibling_node, self.tree[current_node]].concat(),
-                    ),
-                };
+            let (rightessness, siblings_concatinated) = match Self::is_right_sibling(current_node) {
+                0 => (
+                    <F as PrimeCharacteristicRing>::ZERO,
+                    [self.tree[current_node], sibling_node].concat(),
+                ),
+                _ => (
+                    <F as PrimeCharacteristicRing>::ONE,
+                    [sibling_node, self.tree[current_node]].concat(),
+                ),
+            };
 
             values.push(rightessness);
             //we do not need to push the input, the input is

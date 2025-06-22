@@ -31,7 +31,6 @@ fn test_merkle_inclusion() {
      // Example: tree of depth 16 (65536 leaves)
 
      let leaf = 1;
-     let proof = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; //root = 0x03a65988b55f946ea7c6b9e8983b6652dd6f64b749a7e2807e5a8861a0127c8f];
      let proof = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; //root = 0x03a65988b55f946ea7c6b9e8983b6652dd6f64b749a7e2807e5a8861a0127c8f];
      let index = 1; 
 
