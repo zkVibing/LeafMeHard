@@ -1,5 +1,5 @@
 [package]
-name = "polkadot_test"
+name = "trie_test"
 type = "bin"
 authors = [""]
 compiler_version = ">=0.24.0"

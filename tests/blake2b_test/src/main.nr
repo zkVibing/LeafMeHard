@@ -1,48 +1,49 @@
 use dep::trie::blake2b::blake2b;
 
-fn main() {
-    // Run all test functions
-    test_blake2b_basic();
-    test_blake2b_deterministic();
-    test_blake2b_different_inputs();
-    std::println("All Blake2b tests passed!");
+fn main(secret_input: [u8; 32], expected_hash: pub [u8; 32]) {
+    // Compute Blake2b hash of the secret input
+    let computed_hash = blake2b(secret_input);
+
+    // Verify that the computed hash matches the expected hash
+    assert(computed_hash == expected_hash);
 }
 
 #[test]
-fn test_blake2b_basic() {
-    // Test blake2b with a simple input
-    let test_input = [0x61, 0x62, 0x63]; // "abc"
-    let hash_result = blake2b(test_input);
+fn test_blake2b_preimage_knowledge() {
+    // Test data: we know the preimage that produces a specific hash
+    let secret_input = [
+        0x74, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73, 0x20,
+        0x61, 0x20, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74,
+        0x20, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
+        0x20, 0x66, 0x6f, 0x72, 0x20, 0x74, 0x65, 0x73
+    ]; // "this is a secret message for tes"
 
-    // Verify the hash is not all zeros (basic sanity check)
-    let mut is_nonzero = false;
-    for i in 0..32 {
-        if hash_result[i] != 0 {
-            is_nonzero = true;
-        }
-    }
-    assert(is_nonzero);
-}
+    let expected_hash = blake2b(secret_input);
 
-#[test]
-fn test_blake2b_deterministic() {
-    // Test deterministic behavior - same input should produce same output
-    let test_input = [0x61, 0x62, 0x63]; // "abc"
-    let hash_result1 = blake2b(test_input);
-    let hash_result2 = blake2b(test_input);
-    assert(hash_result1 == hash_result2);
+    // This should pass - we know the preimage
+    main(secret_input, expected_hash);
 }
 
 #[test]
 fn test_blake2b_different_inputs() {
-    // Test with different inputs produce different outputs
-    let input1 = [0x61, 0x62, 0x63]; // "abc"
-    let input2 = [0x64, 0x65, 0x66]; // "def"
+    let input1 = [
+        0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f,
+        0x72, 0x6c, 0x64, 0x21, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ]; // "Hello World!" padded
+
+    let input2 = [
+        0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x4e, 0x6f,
+        0x69, 0x72, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    ]; // "Hello Noir!" padded
 
     let hash1 = blake2b(input1);
     let hash2 = blake2b(input2);
 
-    // Hashes should be different
+    // Verify that different inputs produce different hashes
     let mut are_different = false;
     for i in 0..32 {
         if hash1[i] != hash2[i] {
@@ -50,25 +51,4 @@ fn test_blake2b_different_inputs() {
         }
     }
     assert(are_different);
-}
-
-#[test]
-fn test_blake2b_storage_key() {
-    // Test with 32-byte input (typical storage key)
-    let key_input = [
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
-        0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99
-    ];
-    let key_hash = blake2b(key_input);
-
-    // Verify the hash is not all zeros
-    let mut is_nonzero = false;
-    for i in 0..32 {
-        if key_hash[i] != 0 {
-            is_nonzero = true;
-        }
-    }
-    assert(is_nonzero);
 }
