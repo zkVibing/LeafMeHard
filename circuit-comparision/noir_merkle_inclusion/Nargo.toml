@@ -1,0 +1,7 @@
+[package]
+name = "noir_merkle_inclusion"
+type = "bin"
+authors = [""]
+
+[dependencies]
+trees = { git = "https://github.com/zkVibing/zk-kit.noir", tag = "main", directory = "packages/merkle-trees" }
